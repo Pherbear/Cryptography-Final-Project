@@ -1,22 +1,45 @@
-import './App.css';
+import React, { useEffect, useState } from 'react'
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:4000')
 
 function App() {
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
+
+  useEffect(() => {
+    socket.on('message', (msg) => {
+      console.log(msg)
+      setMessages((prev) => [...prev, msg])
+    })
+
+    return () => {
+      //socket.disconnect()
+    }
+  }, [])
+
+  const sendMessage = () => {
+    if (input.trim()) {
+      socket.emit('message', input)
+      setInput('')
+    }
+  }
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div>
+      <h1>React with Socket.IO</h1>
+      <div>
+        {messages.map((msg, idx) => (
+          <p key={idx}>{msg}</p>
+        ))}
+      </div>
+      <input
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="Type a message..."
+      />
+      <button onClick={sendMessage}>Send</button>
     </div>
   );
 }
