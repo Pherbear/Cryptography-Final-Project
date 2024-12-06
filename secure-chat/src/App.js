@@ -8,13 +8,15 @@ function App() {
   const [input, setInput] = useState('')
 
   useEffect(() => {
-    socket.on('message', (msg) => {
+    const messageHandler = (msg) => {
       console.log(msg)
       setMessages((prev) => [...prev, msg])
-    })
+    }
 
+    socket.on('message', messageHandler)
+    
     return () => {
-      //socket.disconnect()
+      socket.off('message', messageHandler)
     }
   }, [])
 
