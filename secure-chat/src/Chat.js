@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router'
 
 export default function Chat({ socket }) {
     const [messages, setMessages] = useState([])
     const [input, setInput] = useState('')
+
+    const navigate = useNavigate()
   
     useEffect(() => {
       const messageHandler = (msg) => {
@@ -26,6 +29,7 @@ export default function Chat({ socket }) {
 
   return (
     <div>
+        <button onClick={() => {navigate('/login')}}>login/signup</button>
         <h1>React with Socket.IO</h1>
         <div>
           {messages.map((msg, idx) => (
