@@ -1,8 +1,9 @@
 const express = require('express')
-const fs = require('fs')
-const path = require('path')
 const http = require('http')
 const { Server } = require('socket.io')
+const { writeToUsers, retrieveAccount } = require('./util/writeToUsers')
+const bcrypt = require('bcrypt')
+const { log } = require('console')
 
 const app = express()
 const server = http.createServer(app)
@@ -13,33 +14,91 @@ const io = new Server(server, {
   }
 })
 
+const users = []
+
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id)
 
+  users.push({id: socket.id, username: ''})
+  io.emit('connected-users', users)
+
   socket.on('message', (msg) => {
     console.log('Message received:', msg)
+    const user = users.find((user) => user.id == socket.id)
 
-    io.emit('message', `Server: ${msg}`)
+    const newMsg = {
+      id: user.id,
+      user: user.username,
+      text: msg
+    }
+
+    if (!user.username) {
+      io.emit('chat-failure', 'user not logged in!')
+    } else {
+      io.emit('message', newMsg)
+    }
+
   })
 
   socket.on('login-request', (login) => {
-    console.log(login)
+    const accountInfo = retrieveAccount(login.username)
+    if (accountInfo) {
+      bcrypt.compare(login.password, accountInfo.password).then((result) => {
 
-    //login success
-    io.to(login.sessionId).emit('login-success', `welcome back, ${login.username}`)
+        if (result) {
+          const user = users.find((user) => user.id === login.id)
+          user.username = login.username
+
+          io.emit('connected-users', users)
+          io.to(login.id).emit('login-success', login.username)
+
+        } else {
+          io.to(login.id).emit('login-failure', 'incorrect password')
+        }
+
+      })
+    } else {
+      io.to(login.id).emit('login-failure', `username does not exist`)
+    }
   })
 
   socket.on('account-create', (signup) => {
-    console.log(signup)
+    if (!retrieveAccount(signup.username)) {
+      bcrypt.hash(signup.password, 10).then((hash) => {
 
-    writeToFile(signup)
+        const newAccountInfo = {
+          username: signup.username,
+          password: hash,
+          accountCreationDate: new Date()
+        }
+        writeToUsers(newAccountInfo)
 
-    //signup success
-    io.to(signup.sessionId).emit('login-success', `account successfully created, welcome ${signup.username}`)
+        const user = users.find((user) => user.id === signup.id)
+        user.username = signup.username
+
+        io.emit('connected-users', users)
+
+        io.to(signup.id).emit('login-success', signup.username)
+      }).catch(() => {
+
+        //signup failure
+        io.to(signup.id).emit('login-failure', 'fatal error')
+
+      })
+    } else {
+      //signup failure
+      console.log('failure')
+      io.to(signup.id).emit('login-failure', 'username already exists')
+    }
   })
 
   socket.on('disconnect', () => {
     console.log('A user disconnected:' , socket.id)
+    const index = users.findIndex((user) => user.id === socket.id)
+    if (index > -1) {
+      users.splice(index, 1)
+    }
+    io.emit('connected-users', users)
   })
 })
 
@@ -48,25 +107,3 @@ server.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`)
 })
 
-const jsonFilePath = path.join(__dirname, 'users.json')
-
-const writeToFile = (data) => {
-  return new Promise((resolve, reject) => {
-    let fileData = [];
-
-    // Check if the file exists
-    if (fs.existsSync(jsonFilePath)) {
-      // Read existing data from the file
-      const existingData = fs.readFileSync(jsonFilePath, 'utf8');
-      console.log(existingData)
-      fileData = existingData ? JSON.parse(existingData) : [];
-    }
-
-    fileData.push(data)
-    
-    fs.writeFile(jsonFilePath, JSON.stringify(fileData, null, 2), (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
