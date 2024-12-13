@@ -15,6 +15,7 @@ const io = new Server(server, {
 })
 
 const users = []
+const chats = []
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id)
@@ -99,6 +100,29 @@ io.on('connection', (socket) => {
       users.splice(index, 1)
     }
     io.emit('connected-users', users)
+  })
+
+  socket.on('create-chat', ({chatName, checkedUsers}) => {
+    const chatId = Math.random().toString(16).slice(2)
+    const host = users.find(user => user.id === socket.id)
+  
+    const chatInfo = {
+      chatId,
+      chatUsers: [...checkedUsers, host],
+      chatName
+    }
+    chats.push(chatInfo)
+
+    checkedUsers.map((user) => {
+      io.to(user.id).emit('chat-invite', {chatId})
+    })
+
+    io.to(socket.id).emit('chat-start', {chatId})
+  })
+
+  socket.on('chat-info-request', (chatid) => {
+    const chatinfo = chats.find((item) => item.chatId = chatid)
+    io.to(socket.id).emit('chat-info', chatinfo)
   })
 })
 

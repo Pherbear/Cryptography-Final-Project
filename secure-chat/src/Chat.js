@@ -1,22 +1,32 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 
 export default function Chat({ socket, loggedin }) {
     const [messages, setMessages] = useState([])
+    const [chatinfo, setChatinfo] = useState()
     const [input, setInput] = useState('')
 
     const navigate = useNavigate()
-  
+    const { chatid } = useParams()
+    
     useEffect(() => {
       const messageHandler = (msg) => {
         console.log(msg)
         setMessages((prev) => [...prev, msg])
       }
-
+      
       const chatFailureHandler = (error) => {
         alert(error)
       }
-  
+      
+      const requestChatInfoHandler = (info) => {
+        setChatinfo(info)
+        console.log(info)
+        socket.off('chat-info', requestChatInfoHandler)
+      }
+      socket.emit('chat-info-request', chatid)
+      
+      socket.on('chat-info', requestChatInfoHandler)
       socket.on('message', messageHandler)
       socket.on('chat-failure', chatFailureHandler)
 
@@ -35,8 +45,9 @@ export default function Chat({ socket, loggedin }) {
 
   return (
     <div>
-        {loggedin? 'logged in as ' + loggedin : <button onClick={() => {navigate('/login')}}>login/signup</button>}
+        {!loggedin && <button onClick={() => {navigate('/login')}}>login/signup</button>}
         <h1>React with Socket.IO</h1>
+        <h2>{chatinfo && chatinfo.chatName}</h2>
         <div>
           {messages.map((msg, idx) => (
             <p key={idx}>{msg.user}: {msg.text}</p>
