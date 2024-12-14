@@ -17,8 +17,15 @@ function App() {
     const userHandler = (users) => {
       setConnectedUsers(users)
     }
+
+    const alertHandler = (alert) => {
+      console.log(alert)
+      //alert(alert)
+    }
+    socket.on('alert-message', alertHandler)
     socket.on('connected-users', userHandler)
     return () => {
+      socket.off('alert-message', alertHandler)
       socket.off('connected-users', userHandler)
     }
   }, [])

@@ -24,13 +24,20 @@ export default function Chat({ socket, loggedin }) {
         console.log(info)
         socket.off('chat-info', requestChatInfoHandler)
       }
-      socket.emit('chat-info-request', chatid)
+
+      const chatExitHandler = () => {
+        navigate('/home')
+      }
+
+      socket.emit('chat-request', chatid)
       
       socket.on('chat-info', requestChatInfoHandler)
+      socket.on('chat-exit', chatExitHandler)
       socket.on('message', messageHandler)
       socket.on('chat-failure', chatFailureHandler)
-
+      
       return () => {
+        socket.off('chat-exit', chatExitHandler)
         socket.off('message', messageHandler)
         socket.off('chat-failure', chatFailureHandler)
       }
@@ -38,7 +45,11 @@ export default function Chat({ socket, loggedin }) {
   
     const sendMessage = () => {
       if (input.trim()) {
-        socket.emit('message', input)
+        const messageData = {
+          chatid,
+          input
+        }
+        socket.emit('message', messageData)
         setInput('')
       }
     }

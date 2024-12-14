@@ -7,9 +7,9 @@ export default function Home({ loggedin, socket }) {
     useEffect(() => {
         if (!loggedin) navigate('/')
         
-        const handleInvite = ({chatId}) => {
+        const handleInvite = ({chatId, hostName}) => {
             //insert invite logic here
-            console.log(chatId)
+            setInvite({chatId, hostName})
         }
         socket.on('chat-invite', handleInvite)
         return () => {
@@ -17,15 +17,19 @@ export default function Home({ loggedin, socket }) {
         }
     }, [])
 
+    const handleJoinChat = () => {
+        navigate(`/chat/${invite.chatId}`)
+    }
+
   return (
     <div>
         <div>
             <button onClick={() => navigate('/newchat')}>Start New Chat</button>
         </div>
-        <div>
-            <div>example name, has invited you to chat.</div>
-            <button>join example name chat</button>
-        </div>
+        {invite && <div>
+            <div>{invite.hostName}, has invited you to chat.</div>
+            <button onClick={handleJoinChat}>join chat</button>
+        </div>}
     </div>
   )
 }

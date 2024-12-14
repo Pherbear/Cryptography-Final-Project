@@ -20,23 +20,24 @@ const chats = []
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id)
 
-  users.push({id: socket.id, username: ''})
+  users.push({id: socket.id, username: '', chatid: ''})
   io.emit('connected-users', users)
 
-  socket.on('message', (msg) => {
-    console.log('Message received:', msg)
+  socket.on('message', ({chatid, input}) => {
+    console.log('Message received:', input, 'in room: ', chatid)
     const user = users.find((user) => user.id == socket.id)
 
     const newMsg = {
+      chatid,
       id: user.id,
       user: user.username,
-      text: msg
+      text: input
     }
 
     if (!user.username) {
-      io.emit('chat-failure', 'user not logged in!')
+      io.to(socket.id).emit('chat-failure', 'user not logged in!')
     } else {
-      io.emit('message', newMsg)
+      io.to(chatid).emit('message', newMsg)
     }
 
   })
@@ -96,6 +97,20 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('A user disconnected:' , socket.id)
     const index = users.findIndex((user) => user.id === socket.id)
+    const chatid = users[index].chatid
+    const username = users[index].username
+
+    if (chatid) {
+      const message = `${username} has disconnected.`
+      const messageData = {
+        chatid,
+        id: '1',
+        user: 'server',
+        text: message
+      }
+      io.to(chatid).emit('message', messageData)
+    }
+
     if (index > -1) {
       users.splice(index, 1)
     }
@@ -114,15 +129,42 @@ io.on('connection', (socket) => {
     chats.push(chatInfo)
 
     checkedUsers.map((user) => {
-      io.to(user.id).emit('chat-invite', {chatId})
+      io.to(user.id).emit('chat-invite', {chatId, hostName: host.username})
     })
 
     io.to(socket.id).emit('chat-start', {chatId})
   })
 
-  socket.on('chat-info-request', (chatid) => {
+  socket.on('chat-invite', ({chatId, checkedUsers}) => {
+    const chatInfo = chats.find(chat => chat.chatId === chatId)
+
+    if (chatInfo) {
+      chatInfo.chatUsers = [...chatInfo.chatUsers, checkedUsers]
+      checkedUsers.map((user) => {
+        io.to(user.id).emit('chat-invite', {chatId, hostName: host.username})
+      })
+    } else {
+      io.to(socket.id).emit('alert-message', 'chat does not exist!')
+    }
+  })
+
+  socket.on('chat-request', (chatid) => {
     const chatinfo = chats.find((item) => item.chatId = chatid)
-    io.to(socket.id).emit('chat-info', chatinfo)
+    
+    if (chatinfo) {
+      const user = chatinfo.chatUsers.find(user => {return user.id === socket.id})
+      if (user) {
+        user.chatid = chatid
+        io.to(socket.id).emit('chat-info', chatinfo)
+        socket.join(chatid)
+      } else {
+        io.to(socket.id).emit('chat-exit')
+        io.to(socket.id).emit('alert-message', 'no premissions to join chat')
+      }
+    } else {
+      io.to(socket.id).emit('chat-exit')
+      io.to(socket.id).emit('alert-message', 'chat info not found')
+    }
   })
 })
 
