@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
-export default function Chat({ socket, loggedin, connectedUsers }) {
+export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
   const [messages, setMessages] = useState([])
   const [chatinfo, setChatinfo] = useState()
   const [input, setInput] = useState('')
@@ -14,14 +14,11 @@ export default function Chat({ socket, loggedin, connectedUsers }) {
 
   const handleCheckUser = (event, user) => {
     const checked = event.target.checked
-    console.log(checked)
-
     if (checked) {
       if (!checkedUsers.includes(user)) setCheckedUsers([...checkedUsers, user])
     } else {
       setCheckedUsers(l => l.filter(item => item !== user))
     }
-    console.log(checkedUsers)
   }
 
   const decryptMessage = async ({ ciphertext, iv }) => {
@@ -36,7 +33,6 @@ export default function Chat({ socket, loggedin, connectedUsers }) {
 
   const importSymmetricKey = async (key) => {
     const keyBuffer = Uint8Array.from(atob(key), (char) => char.charCodeAt(0));
-    console.log(keyBuffer)
     const cryptoKey = await window.crypto.subtle.importKey(
       'raw',
       keyBuffer,
@@ -46,18 +42,31 @@ export default function Chat({ socket, loggedin, connectedUsers }) {
     );
     return cryptoKey
   }
+
+  const decryptEncryptedKey = async (encryptedKey) => {
+    const { privateKey } = keyPair
+    const decrypted = await window.crypto.subtle.decrypt(
+      {
+        name: "RSA-OAEP"
+      },
+      privateKey,
+      encryptedKey
+    )
+    const decoder = new TextDecoder()
+    const decodedKey = decoder.decode(decrypted)
+    return decodedKey
+  }
   
   useEffect(() => {
     const messageHandler = async (msg) => {
-      console.log(msg)
       const { encryptedMessageData } = msg
-      
       if (encryptedMessageData) {
         const { ciphertext, iv } = encryptedMessageData
         const decryptedMessage = await decryptMessage({ ciphertext, iv })
-        msg.text = decryptedMessage
+        setMessages((prev) => [...prev, {...msg, text: decryptedMessage}])
+      } else {
+        setMessages((prev) => [...prev, msg])
       }
-      setMessages((prev) => [...prev, msg])
     }
     
     const chatFailureHandler = (error) => {
@@ -65,11 +74,11 @@ export default function Chat({ socket, loggedin, connectedUsers }) {
     }
     
     const requestChatInfoHandler = async (info) => {
-      console.log(info)
       setChatinfo(info)
       let cryptoKey
       try {
-        cryptoKey = await importSymmetricKey(info.chatKey)
+        const symmetricKey = await decryptEncryptedKey(info.encryptedKey)
+        cryptoKey = await importSymmetricKey(symmetricKey)
       } catch {
         console.log('crypto key invalid!')
       } finally {
@@ -82,14 +91,13 @@ export default function Chat({ socket, loggedin, connectedUsers }) {
       navigate('/home')
     }
 
-    socket.emit('chat-request', chatid)
-
     socket.on('chat-info', requestChatInfoHandler)
     socket.on('chat-exit', chatExitHandler)
     socket.on('message', messageHandler)
     socket.on('chat-failure', chatFailureHandler)
     
     return () => {
+      socket.emit('chat-request', chatid)
       socket.off('chat-info')
       socket.off('chat-exit')
       socket.off('message')

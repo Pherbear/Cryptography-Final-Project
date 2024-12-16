@@ -20,15 +20,11 @@ export default function NewChat({ socket, connectedUsers, loggedin }) {
 
     const handleCheckUser = (event, user) => {
         const checked = event.target.checked
-        console.log(checked)
-
         if (checked) {
             if(!checkedUsers.includes(user)) setCheckedUsers([...checkedUsers, user])
         } else {
             setCheckedUsers(l => l.filter(item => item !== user))
         }
-        
-        console.log(checkedUsers)
     }
 
     const handleCreateChat = () => {
