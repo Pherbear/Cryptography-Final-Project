@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-export default function Login({ socket, setLoggedIn }) {
+export default function Login({ socket, setLoggedIn, setPrivateKey }) {
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -9,6 +9,18 @@ export default function Login({ socket, setLoggedIn }) {
   const [togglePage, setTogglePage] = useState(true)
 
   const navigate = useNavigate()
+
+  const generateKeyPair = async () => {
+    const keyPair = await window.crypto.subtle.generateKey({
+      name: "RSA-OAEP",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    }, true, ["encrypt", "decrypt"]);
+
+    const publicKey = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+    const privateKey = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+  }
 
   const onLoginSuccess = (message) => {
     setLoggedIn(message)

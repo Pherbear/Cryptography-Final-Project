@@ -12,7 +12,8 @@ const socket = io('http://localhost:4000')
 function App() {
   const [connectedUsers, setConnectedUsers] = useState([])
   const [loggedin, setLoggedIn] = useState('')
-  
+  const [privateKey, setPrivateKey] = useState()
+
   useEffect(() => {
     const userHandler = (users) => {
       setConnectedUsers(users)
@@ -36,8 +37,8 @@ function App() {
         <Routes>
           <Route path='/' element={<LandingPage loggedin={loggedin}/>}/>
           <Route path="/home" element={<Home loggedin={loggedin} socket={socket}/>}/>
-          <Route path="/chat/:chatid" element={<Chat socket={socket} loggedin={loggedin}/>}/>
-          <Route path="/login" element={<Login socket={socket} setLoggedIn={setLoggedIn}/>}/>
+          <Route path="/chat/:chatid" element={<Chat socket={socket} loggedin={loggedin} connectedUsers={connectedUsers}/>}/>
+          <Route path="/login" element={<Login socket={socket} setLoggedIn={setLoggedIn} setPrivateKey={setPrivateKey}/>}/>
           <Route path='/newchat' element={<NewChat socket={socket} loggedin={loggedin} connectedUsers={connectedUsers}/>}/>
         </Routes>
       </BrowserRouter>

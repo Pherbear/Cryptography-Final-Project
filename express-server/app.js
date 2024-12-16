@@ -4,6 +4,7 @@ const { Server } = require('socket.io')
 const { writeToUsers, retrieveAccount } = require('./util/writeToUsers')
 const bcrypt = require('bcrypt')
 const { log } = require('console')
+const crypto = require('crypto')
 
 const app = express()
 const server = http.createServer(app)
@@ -23,15 +24,17 @@ io.on('connection', (socket) => {
   users.push({id: socket.id, username: '', chatid: ''})
   io.emit('connected-users', users)
 
-  socket.on('message', ({chatid, input}) => {
+  socket.on('message', ({chatid, input, encryptedMessageData}) => {
     console.log('Message received:', input, 'in room: ', chatid)
     const user = users.find((user) => user.id == socket.id)
+    console.log(encryptedMessageData)
 
     const newMsg = {
       chatid,
       id: user.id,
       user: user.username,
-      text: input
+      text: input,
+      encryptedMessageData 
     }
 
     if (!user.username) {
@@ -53,6 +56,8 @@ io.on('connection', (socket) => {
 
           io.emit('connected-users', users)
           io.to(login.id).emit('login-success', login.username)
+
+          console.log(`${socket.id} has logged in as ${login.username}`)
 
         } else {
           io.to(login.id).emit('login-failure', 'incorrect password')
@@ -117,35 +122,43 @@ io.on('connection', (socket) => {
     io.emit('connected-users', users)
   })
 
-  socket.on('create-chat', ({chatName, checkedUsers}) => {
+  socket.on('create-chat', async ({chatName, checkedUsers}) => {
     const chatId = Math.random().toString(16).slice(2)
     const host = users.find(user => user.id === socket.id)
+    let symmetricKey
+    try {
+      symmetricKey = await generateSymmetricKey()
+    } finally {
+      console.log(symmetricKey)
+      const chatInfo = {
+        chatId,
+        chatUsers: [...checkedUsers, host],
+        chatName,
+        chatKey: symmetricKey
+      }
+      chats.push(chatInfo)
   
-    const chatInfo = {
-      chatId,
-      chatUsers: [...checkedUsers, host],
-      chatName
+      checkedUsers.map((user) => {
+        io.to(user.id).emit('chat-invite', {chatId, hostName: host.username})
+      })
+  
+      io.to(socket.id).emit('chat-start', {chatId})
     }
-    chats.push(chatInfo)
-
-    checkedUsers.map((user) => {
-      io.to(user.id).emit('chat-invite', {chatId, hostName: host.username})
-    })
-
-    io.to(socket.id).emit('chat-start', {chatId})
   })
 
-  socket.on('chat-invite', ({chatId, checkedUsers}) => {
+  socket.on('chat-invite', ({chatId, hostName, checkedUsers}) => {
     const chatInfo = chats.find(chat => chat.chatId === chatId)
 
     if (chatInfo) {
-      chatInfo.chatUsers = [...chatInfo.chatUsers, checkedUsers]
+      chatInfo.chatUsers = [...chatInfo.chatUsers, ...checkedUsers]
       checkedUsers.map((user) => {
-        io.to(user.id).emit('chat-invite', {chatId, hostName: host.username})
+        io.to(user.id).emit('chat-invite', {chatId, hostName})
       })
     } else {
       io.to(socket.id).emit('alert-message', 'chat does not exist!')
     }
+
+    io.to(chatId).emit('chat-info', chatInfo)
   })
 
   socket.on('chat-request', (chatid) => {
@@ -154,16 +167,31 @@ io.on('connection', (socket) => {
     if (chatinfo) {
       const user = chatinfo.chatUsers.find(user => {return user.id === socket.id})
       if (user) {
+        console.log(user)
+
         user.chatid = chatid
         io.to(socket.id).emit('chat-info', chatinfo)
         socket.join(chatid)
+        io.emit('connected-users', users)
+
+        const message = `${user.username} has connected.`
+        const messageData = {
+          chatid,
+          id: '1',
+          user: 'server',
+          text: message
+        }
+        io.to(chatid).emit('message', messageData)
+
       } else {
         io.to(socket.id).emit('chat-exit')
         io.to(socket.id).emit('alert-message', 'no premissions to join chat')
       }
     } else {
+
       io.to(socket.id).emit('chat-exit')
       io.to(socket.id).emit('alert-message', 'chat info not found')
+
     }
   })
 })
@@ -173,3 +201,9 @@ server.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`)
 })
 
+const generateSymmetricKey = async () => {
+  const key = crypto.randomBytes(32)
+  const stringKey = key.toString('base64')
+  console.log(stringKey)
+  return stringKey;
+}
