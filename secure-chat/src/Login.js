@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import forge from 'node-forge'
 
 export default function Login({ socket, setLoggedIn, setKeyPair, setDigSigKeyPair }) {
 
@@ -34,22 +35,14 @@ export default function Login({ socket, setLoggedIn, setKeyPair, setDigSigKeyPai
           hash: { name: "SHA-256" },
         },
         true,
-        ["sign", "verify"] 
-      );
-      return rsaKeyPair;
-    } else if (digSigRef.current === 'DSA') {
-      const dsaKeyPair = await window.crypto.subtle.generateKey(
-        {
-          name: "DSA", 
-          modulusLength: 2048,
-          hash: { name: "SHA-256" },
-        },
-        true,
         ["sign", "verify"]
       );
-      return dsaKeyPair;
+      return {...rsaKeyPair, type: 'RSASSA-PKCS1-v1_5'};
+    } else if (digSigRef.current === 'DSA') {
+      const dsa = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
+      return {...dsa, type: 'DSA'};
     }
-   }
+  }
 
   const onLoginSuccess = async (message) => {
     try {
@@ -117,7 +110,7 @@ export default function Login({ socket, setLoggedIn, setKeyPair, setDigSigKeyPai
         else if (algo == 'DSA') return 'DSA'
       })
       digSigRef.current = algo
-     }
+    }
   }
 
   return (

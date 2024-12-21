@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import forge from 'node-forge'
 
 export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSigKeyPair }) {
   const [messages, setMessages] = useState([])
@@ -91,7 +92,7 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
       info.chatUsers.map(async (user) => {
         if (!newChatUsers.includes(i => i.id === user.id)) {
           const digsigkey = await importDigSigKey(user.digsigkey)
-          newChatUsers.push({ id: user.id, digsigkey })
+          newChatUsers.push({ id: user.id, digsigkey, type: user.digsigkey.type })
         }
       })
       setChatUsers(newChatUsers)
@@ -119,7 +120,8 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
   const sendMessage = async () => {
     if (input.trim()) {
       const encryptedMessageData = await encryptMessage(input, chatKey)
-      const messageSignature = await signMessage(digSigKeyPair.privateKey ,input)
+      console.log(digSigKeyPair)
+      const messageSignature = await signMessage(digSigKeyPair, input)
       const messageData = {
         chatid,
         encryptedMessageData,
@@ -133,8 +135,6 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
   const inviteUsers = () => {
     socket.emit('chat-invite', { chatId: chatinfo.chatId, checkedUsers, hostName: loggedin })
   }
-
-
 
   return (
     <div>
@@ -188,8 +188,8 @@ const Message = ({ msg, idx, chatUsers }) => {
       if (msg.id == '1') setVerified(true)
       else {
         const user = chatUsers.find(user => user.id === msg.id)
-        const {digsigkey} = user
-        if (await verifySignature(digsigkey, msg.text, msg.messageSignature)) {
+        const {digsigkey, type} = user
+        if (await verifySignature(digsigkey, type, msg.text, msg.messageSignature)) {
           setVerified(true)
         }
         console.log(msg)
@@ -206,22 +206,29 @@ const Message = ({ msg, idx, chatUsers }) => {
   )
 }
 
-const verifySignature = async (publicKey, message, signatureBase64) => {
+const verifySignature = async (publicKey, type, message, signatureBase64) => {
   console.log(publicKey, message, signatureBase64)
 
-  const messageBuffer = stringToArrayBuffer(message);
-  const signatureBuffer = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0)).buffer;
-
-  const isValid = await window.crypto.subtle.verify(
-    {
-      name: "RSASSA-PKCS1-v1_5",
-    },
-    publicKey,
-    signatureBuffer,
-    messageBuffer
-  );
-
-  return isValid;
+  if (type == "RSASSA-PKCS1-v1_5") {
+    const messageBuffer = stringToArrayBuffer(message);
+    const signatureBuffer = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0)).buffer;
+  
+    const isValid = await window.crypto.subtle.verify(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+      },
+      publicKey,
+      signatureBuffer,
+      messageBuffer
+    );
+  
+    return isValid;
+  } else if (type == 'DSA') {
+    const md = forge.md.sha256.create();
+    md.update(message, "utf8");
+    const signature = forge.util.decode64(signatureBase64);
+    return publicKey.verify(md.digest().bytes(), signature);
+  }
 }
 
 
@@ -252,10 +259,11 @@ const base64ToArrayBuffer = (base64) => {
 }
 
 const importDigSigKey = async (digsigkey) => {
-  const { base64Key, type } = digsigkey
-  const publicKeyBuffer = base64ToArrayBuffer(base64Key)
-
+  const { type } = digsigkey
+  
   if (type == 'RSASSA-PKCS1-v1_5') {
+    const { base64Key } = digsigkey
+    const publicKeyBuffer = base64ToArrayBuffer(base64Key)
     const publicKey = await window.crypto.subtle.importKey(
       "spki", // Format of the exported public key
       publicKeyBuffer,
@@ -270,25 +278,34 @@ const importDigSigKey = async (digsigkey) => {
     return publicKey;
   }
 
-  if (type == '') {
-    //dsa key
+  if (type == 'DSA') {
+    const { pem } = digsigkey
+    return forge.pki.publicKeyFromPem(pem);
   }
 }
 
-const signMessage = async (privateKey, message) => {
+const signMessage = async (keyPair, message) => {
+  const {type, privateKey} = keyPair
   const messageBuffer = stringToArrayBuffer(message);
 
-  // Generate the digital signature
-  const signature = await window.crypto.subtle.sign(
-    {
-      name: "RSASSA-PKCS1-v1_5",
-    },
-    privateKey,
-    messageBuffer
-  );
-
-  // Convert the signature to Base64 for easier transport
-  const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
-
-  return signatureBase64;
+  if (type == 'RSASSA-PKCS1-v1_5') {
+    // Generate the digital signature
+    const signature = await window.crypto.subtle.sign(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+      },
+      privateKey,
+      messageBuffer
+    );
+  
+    // Convert the signature to Base64 for easier transport
+    const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  
+    return signatureBase64;
+  } else if (type == 'DSA') {
+    const md = forge.md.sha256.create();
+    md.update(message, "utf8");
+    const signature = privateKey.sign(md);
+    return forge.util.encode64(signature);
+  }
 };

@@ -6,6 +6,7 @@ import Home from './Home';
 import { BrowserRouter, Routes, Route } from 'react-router'
 import LandingPage from './LandingPage';
 import NewChat from './NewChat';
+import forge from "node-forge";
 
 const socket = io('http://localhost:4000')
 
@@ -45,9 +46,20 @@ function App() {
 
   useEffect(() => {
     const exportKey = async (publicKey) => {
-      const exportedKey = await window.crypto.subtle.exportKey("spki", publicKey)
-      const base64Key = btoa(String.fromCharCode(...new Uint8Array(exportedKey)));
-      socket.emit('digsig-public-key', {base64Key, type: publicKey.algorithm.name})
+      console.log(publicKey)
+      let exportedData
+      if (publicKey.algorithm) {
+        const exportedKey = await window.crypto.subtle.exportKey("spki", publicKey)
+        const base64Key = btoa(String.fromCharCode(...new Uint8Array(exportedKey)));
+        exportedData = {base64Key, type: publicKey.algorithm.name}
+      } else {
+        const pem = forge.pki.publicKeyToPem(publicKey);
+        exportedData = {
+          pem,
+          type: 'DSA'
+        }
+      }
+      socket.emit('digsig-public-key', exportedData)
     }
     if (digSigKeyPair) {
       const { publicKey } = digSigKeyPair
