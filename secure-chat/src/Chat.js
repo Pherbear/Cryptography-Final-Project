@@ -10,6 +10,7 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
   const [chatKey, setChatKey] = useState()
   const [chatUsers, setChatUsers] = useState([])
   const chatKeyRef = useRef(chatKey)
+  const chatUsersRef = useRef(chatUsers)
 
   const navigate = useNavigate()
   const { chatid } = useParams()
@@ -61,6 +62,8 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
 
   useEffect(() => {
     const messageHandler = async (msg) => {
+      console.log(msg)
+
       const { encryptedMessageData } = msg
       if (encryptedMessageData) {
         const { ciphertext, iv } = encryptedMessageData
@@ -77,15 +80,18 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
 
     const requestChatInfoHandler = async (info) => {
       setChatinfo(info)
-      let cryptoKey
-      try {
-        const symmetricKey = await decryptEncryptedKey(info.encryptedKey)
-        cryptoKey = await importSymmetricKey(symmetricKey)
-      } catch {
-        console.log('crypto key invalid!')
-      } finally {
-        setChatKey(cryptoKey)
-        chatKeyRef.current = cryptoKey
+
+      if (!chatKeyRef.current) {
+        let cryptoKey
+        try {
+          const symmetricKey = await decryptEncryptedKey(info.encryptedKey)
+          cryptoKey = await importSymmetricKey(symmetricKey)
+        } catch {
+          console.log('crypto key invalid!')
+        } finally {
+          setChatKey(cryptoKey)
+          chatKeyRef.current = cryptoKey
+        }
       }
 
       let newChatUsers = chatUsers
@@ -96,6 +102,7 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
         }
       })
       setChatUsers(newChatUsers)
+      chatUsersRef.current = newChatUsers
       console.log(newChatUsers)
     }
 
@@ -147,7 +154,7 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
             msg={msg}
             idx={idx}
             chatinfo={chatinfo}
-            chatUsers={chatUsers}
+            chatUsersRef={chatUsersRef}
             setChatUsers={setChatUsers}
             connectedUsers={connectedUsers}
 
@@ -180,14 +187,15 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
   )
 }
 
-const Message = ({ msg, idx, chatUsers }) => {
+const Message = ({ msg, idx, chatUsersRef }) => {
   const [verified, setVerified] = useState(false)
 
   useEffect(() => {
     const verifyMessage = async () => {
       if (msg.id == '1') setVerified(true)
       else {
-        const user = chatUsers.find(user => user.id === msg.id)
+        console.log(chatUsersRef.current)
+        const user = chatUsersRef.current.find(user => user.id === msg.id)
         const {digsigkey, type} = user
         if (await verifySignature(digsigkey, type, msg.text, msg.messageSignature)) {
           setVerified(true)

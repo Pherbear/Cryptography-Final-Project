@@ -164,6 +164,7 @@ io.on('connection', (socket) => {
         io.to(user.id).emit('chat-invite', {chatId, hostName: host.username})
       })
       io.to(socket.id).emit('chat-start', {chatId})
+      io.to(socket.id).emit('chat-info', chatInfo)
     }
   })
 
@@ -173,6 +174,7 @@ io.on('connection', (socket) => {
 
     if (chatInfo) {
       chatInfo.chatUsers = [...chatInfo.chatUsers, ...checkedUsers]
+      io.to(chatId).emit('chat-info', chatInfo)
       checkedUsers.map((user) => {
         io.to(user.id).emit('chat-invite', {chatId, hostName})
       })
@@ -185,6 +187,7 @@ io.on('connection', (socket) => {
         text: invitationMessage
       }
       io.to(chatId).emit('message', messageData)
+
 
     } else {
       io.to(socket.id).emit('alert-message', 'chat does not exist!')
