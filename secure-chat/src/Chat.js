@@ -62,8 +62,6 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
 
   useEffect(() => {
     const messageHandler = async (msg) => {
-      console.log(msg)
-
       const { encryptedMessageData } = msg
       if (encryptedMessageData) {
         const { ciphertext, iv } = encryptedMessageData
@@ -103,7 +101,6 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
       })
       setChatUsers(newChatUsers)
       chatUsersRef.current = newChatUsers
-      console.log(newChatUsers)
     }
 
     const chatExitHandler = () => {
@@ -127,7 +124,6 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSig
   const sendMessage = async () => {
     if (input.trim()) {
       const encryptedMessageData = await encryptMessage(input, chatKey)
-      console.log(digSigKeyPair)
       const messageSignature = await signMessage(digSigKeyPair, input)
       const messageData = {
         chatid,
@@ -194,13 +190,11 @@ const Message = ({ msg, idx, chatUsersRef }) => {
     const verifyMessage = async () => {
       if (msg.id == '1') setVerified(true)
       else {
-        console.log(chatUsersRef.current)
         const user = chatUsersRef.current.find(user => user.id === msg.id)
         const {digsigkey, type} = user
         if (await verifySignature(digsigkey, type, msg.text, msg.messageSignature)) {
           setVerified(true)
         }
-        console.log(msg)
       }
     }
 
@@ -215,8 +209,6 @@ const Message = ({ msg, idx, chatUsersRef }) => {
 }
 
 const verifySignature = async (publicKey, type, message, signatureBase64) => {
-  console.log(publicKey, message, signatureBase64)
-
   if (type == "RSASSA-PKCS1-v1_5") {
     const messageBuffer = stringToArrayBuffer(message);
     const signatureBuffer = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0)).buffer;
