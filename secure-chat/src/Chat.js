@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
-export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
+export default function Chat({ socket, loggedin, connectedUsers, keyPair, digSigKeyPair }) {
   const [messages, setMessages] = useState([])
   const [chatinfo, setChatinfo] = useState()
   const [input, setInput] = useState('')
   const [checkedUsers, setCheckedUsers] = useState([])
   const [chatKey, setChatKey] = useState()
+  const [chatUsers, setChatUsers] = useState([])
   const chatKeyRef = useRef(chatKey)
 
   const navigate = useNavigate()
@@ -56,23 +57,23 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
     const decodedKey = decoder.decode(decrypted)
     return decodedKey
   }
-  
+
   useEffect(() => {
     const messageHandler = async (msg) => {
       const { encryptedMessageData } = msg
       if (encryptedMessageData) {
         const { ciphertext, iv } = encryptedMessageData
         const decryptedMessage = await decryptMessage({ ciphertext, iv })
-        setMessages((prev) => [...prev, {...msg, text: decryptedMessage}])
+        setMessages((prev) => [...prev, { ...msg, text: decryptedMessage }])
       } else {
         setMessages((prev) => [...prev, msg])
       }
     }
-    
+
     const chatFailureHandler = (error) => {
       alert(error)
     }
-    
+
     const requestChatInfoHandler = async (info) => {
       setChatinfo(info)
       let cryptoKey
@@ -85,8 +86,18 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
         setChatKey(cryptoKey)
         chatKeyRef.current = cryptoKey
       }
+
+      let newChatUsers = chatUsers
+      info.chatUsers.map(async (user) => {
+        if (!newChatUsers.includes(i => i.id === user.id)) {
+          const digsigkey = await importDigSigKey(user.digsigkey)
+          newChatUsers.push({ id: user.id, digsigkey })
+        }
+      })
+      setChatUsers(newChatUsers)
+      console.log(newChatUsers)
     }
-    
+
     const chatExitHandler = () => {
       navigate('/home')
     }
@@ -95,7 +106,7 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
     socket.on('chat-exit', chatExitHandler)
     socket.on('message', messageHandler)
     socket.on('chat-failure', chatFailureHandler)
-    
+
     return () => {
       socket.emit('chat-request', chatid)
       socket.off('chat-info')
@@ -108,9 +119,11 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
   const sendMessage = async () => {
     if (input.trim()) {
       const encryptedMessageData = await encryptMessage(input, chatKey)
+      const messageSignature = await signMessage(digSigKeyPair.privateKey ,input)
       const messageData = {
         chatid,
-        encryptedMessageData
+        encryptedMessageData,
+        messageSignature
       }
       socket.emit('message', messageData)
       setInput('')
@@ -121,6 +134,8 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
     socket.emit('chat-invite', { chatId: chatinfo.chatId, checkedUsers, hostName: loggedin })
   }
 
+
+
   return (
     <div>
       {!loggedin && <button onClick={() => { navigate('/login') }}>login/signup</button>}
@@ -128,7 +143,15 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
       <h2>{chatinfo && chatinfo.chatName}</h2>
       <div>
         {messages.map((msg, idx) => (
-          <p key={idx}>{msg.user}: {msg.text}</p>
+          <Message
+            msg={msg}
+            idx={idx}
+            chatinfo={chatinfo}
+            chatUsers={chatUsers}
+            setChatUsers={setChatUsers}
+            connectedUsers={connectedUsers}
+
+          />
         ))}
       </div>
       <input
@@ -157,6 +180,50 @@ export default function Chat({ socket, loggedin, connectedUsers, keyPair }) {
   )
 }
 
+const Message = ({ msg, idx, chatUsers }) => {
+  const [verified, setVerified] = useState(false)
+
+  useEffect(() => {
+    const verifyMessage = async () => {
+      if (msg.id == '1') setVerified(true)
+      else {
+        const user = chatUsers.find(user => user.id === msg.id)
+        const {digsigkey} = user
+        if (await verifySignature(digsigkey, msg.text, msg.messageSignature)) {
+          setVerified(true)
+        }
+        console.log(msg)
+      }
+    }
+
+    if (!verified) verifyMessage()
+  }, [])
+
+  return (
+    <div>
+      <p key={idx}>{msg.user}: {msg.text} {verified ? "✓" : "✕"}</p>
+    </div>
+  )
+}
+
+const verifySignature = async (publicKey, message, signatureBase64) => {
+  console.log(publicKey, message, signatureBase64)
+
+  const messageBuffer = stringToArrayBuffer(message);
+  const signatureBuffer = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0)).buffer;
+
+  const isValid = await window.crypto.subtle.verify(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+    },
+    publicKey,
+    signatureBuffer,
+    messageBuffer
+  );
+
+  return isValid;
+}
+
 
 const stringToArrayBuffer = (str) => {
   const encoder = new TextEncoder();
@@ -174,3 +241,54 @@ const encryptMessage = async (message, key) => {
   return { ciphertext, iv }
 }
 
+const base64ToArrayBuffer = (base64) => {
+  const binaryString = atob(base64)
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes.buffer;
+}
+
+const importDigSigKey = async (digsigkey) => {
+  const { base64Key, type } = digsigkey
+  const publicKeyBuffer = base64ToArrayBuffer(base64Key)
+
+  if (type == 'RSASSA-PKCS1-v1_5') {
+    const publicKey = await window.crypto.subtle.importKey(
+      "spki", // Format of the exported public key
+      publicKeyBuffer,
+      {
+        name: "RSASSA-PKCS1-v1_5", // Same algorithm used during generation
+        hash: { name: "SHA-256" }, // Same hash algorithm used during generation
+      },
+      true, // Whether the key is extractable
+      ["verify"] // Key usage
+    );
+
+    return publicKey;
+  }
+
+  if (type == '') {
+    //dsa key
+  }
+}
+
+const signMessage = async (privateKey, message) => {
+  const messageBuffer = stringToArrayBuffer(message);
+
+  // Generate the digital signature
+  const signature = await window.crypto.subtle.sign(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+    },
+    privateKey,
+    messageBuffer
+  );
+
+  // Convert the signature to Base64 for easier transport
+  const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+  return signatureBase64;
+};

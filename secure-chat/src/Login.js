@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-export default function Login({ socket, setLoggedIn, setKeyPair }) {
+export default function Login({ socket, setLoggedIn, setKeyPair, setDigSigKeyPair }) {
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [togglePage, setTogglePage] = useState(true)
+  const [digSig, setDigSig] = useState('')
+  const digSigRef = useRef(digSig)
 
   const navigate = useNavigate()
 
@@ -21,15 +23,45 @@ export default function Login({ socket, setLoggedIn, setKeyPair }) {
     return keyPair
   }
 
+  const generateDigSigKey = async (digSig) => {
+    console.log(digSigRef.current)
+    if (digSigRef.current == 'RSA') {
+      const rsaKeyPair = await window.crypto.subtle.generateKey(
+        {
+          name: "RSASSA-PKCS1-v1_5",
+          modulusLength: 2048,
+          publicExponent: new Uint8Array([1, 0, 1]),
+          hash: { name: "SHA-256" },
+        },
+        true,
+        ["sign", "verify"] 
+      );
+      return rsaKeyPair;
+    } else if (digSigRef.current === 'DSA') {
+      const dsaKeyPair = await window.crypto.subtle.generateKey(
+        {
+          name: "DSA", 
+          modulusLength: 2048,
+          hash: { name: "SHA-256" },
+        },
+        true,
+        ["sign", "verify"]
+      );
+      return dsaKeyPair;
+    }
+   }
+
   const onLoginSuccess = async (message) => {
     try {
       setKeyPair(await generateKeyPair())
+      const DigSigKeyPair = await generateDigSigKey()
+      setDigSigKeyPair(DigSigKeyPair)
     } finally {
       setLoggedIn(message)
       navigate('/')
     }
   }
-  
+
   const onLoginFailure = (message) => {
     alert(message)
   }
@@ -45,27 +77,47 @@ export default function Login({ socket, setLoggedIn, setKeyPair }) {
   }, [])
 
   const handleLogin = async (e) => {
-    const id = socket.id
-    const login = {
-      id,
-      username,
-      password
+    console.log(digSig)
+    if (digSig) {
+      const id = socket.id
+      const login = {
+        id,
+        username,
+        password
+      }
+      socket.emit('login-request', login)
+    } else {
+      alert('Algorithm Required')
     }
-    socket.emit('login-request', login)
   }
 
   const handleSignup = (e) => {
-    const id = socket.id
-    const signup = {
-      id,
-      username,
-      password
+    if (digSig) {
+      const id = socket.id
+      const signup = {
+        id,
+        username,
+        password
+      }
+      socket.emit('account-create', signup)
+    } else {
+      alert('Algorithm Required')
     }
-    socket.emit('account-create', signup)
   }
 
   const handleTogglePage = () => {
     setTogglePage(!togglePage)
+  }
+
+  const handleAlgorithm = (e) => {
+    if (e.target.value == 'on') {
+      const algo = `${e.target.id}`
+      setDigSig(() => {
+        if (algo == 'RSA') return 'RSA'
+        else if (algo == 'DSA') return 'DSA'
+      })
+      digSigRef.current = algo
+     }
   }
 
   return (
@@ -103,7 +155,13 @@ export default function Login({ socket, setLoggedIn, setKeyPair }) {
           <button onClick={handleTogglePage}>Back to Login</button>
         </div>
       }
-
+      <div>
+        <h2>Digital Signature Algorithm:</h2>
+        <input type='radio' id='DSA' name='algo' onChange={(e) => handleAlgorithm(e)} />
+        <label for="css">DSA Algorithm</label>
+        <input type='radio' id='RSA' name='algo' onChange={(e) => handleAlgorithm(e)} />
+        <label for="css">RSA Algorithm</label>
+      </div>
     </div>
   )
 }

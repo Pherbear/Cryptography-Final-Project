@@ -13,10 +13,12 @@ function App() {
   const [connectedUsers, setConnectedUsers] = useState([])
   const [loggedin, setLoggedIn] = useState('')
   const [keyPair, setKeyPair] = useState()
+  const [digSigKeyPair, setDigSigKeyPair] = useState()
 
   useEffect(() => {
     const userHandler = (users) => {
       setConnectedUsers(users)
+      console.log(users)
     }
     const alertHandler = (alert) => {
       console.log(alert)
@@ -41,14 +43,26 @@ function App() {
     }
   }, [keyPair])
 
+  useEffect(() => {
+    const exportKey = async (publicKey) => {
+      const exportedKey = await window.crypto.subtle.exportKey("spki", publicKey)
+      const base64Key = btoa(String.fromCharCode(...new Uint8Array(exportedKey)));
+      socket.emit('digsig-public-key', {base64Key, type: publicKey.algorithm.name})
+    }
+    if (digSigKeyPair) {
+      const { publicKey } = digSigKeyPair
+      if (publicKey) exportKey(publicKey)
+    }
+  }, [digSigKeyPair])
+
   return (
     <div style={{display: 'flex', justifyContent: 'space-between'}}>
       <BrowserRouter>
         <Routes>
           <Route path='/' element={<LandingPage loggedin={loggedin}/>}/>
           <Route path="/home" element={<Home loggedin={loggedin} socket={socket}/>}/>
-          <Route path="/chat/:chatid" element={<Chat socket={socket} loggedin={loggedin} connectedUsers={connectedUsers} keyPair={keyPair}/>}/>
-          <Route path="/login" element={<Login socket={socket} setLoggedIn={setLoggedIn} setKeyPair={setKeyPair}/>}/>
+          <Route path="/chat/:chatid" element={<Chat socket={socket} loggedin={loggedin} connectedUsers={connectedUsers} keyPair={keyPair} digSigKeyPair={digSigKeyPair}/>}/>
+          <Route path="/login" element={<Login socket={socket} setLoggedIn={setLoggedIn} setKeyPair={setKeyPair} setDigSigKeyPair={setDigSigKeyPair}/>}/>
           <Route path='/newchat' element={<NewChat socket={socket} loggedin={loggedin} connectedUsers={connectedUsers}/>}/>
         </Routes>
       </BrowserRouter>

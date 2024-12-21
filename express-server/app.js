@@ -16,6 +16,7 @@ const io = new Server(server, {
 
 const users = []
 const userKeys = new Map()
+const userDigSig = new Map()
 const userChats = new Map()
 
 const chats = []
@@ -27,14 +28,15 @@ io.on('connection', (socket) => {
   users.push({id: socket.id, username: ''})
   io.emit('connected-users', users)
 
-  socket.on('message', ({chatid, input, encryptedMessageData}) => {
+  socket.on('message', ({chatid, input, encryptedMessageData, messageSignature}) => {
     const user = users.find((user) => user.id == socket.id)
     const newMsg = {
       chatid,
       id: user.id,
       user: user.username,
       text: input,
-      encryptedMessageData 
+      encryptedMessageData,
+      messageSignature
     }
     if (!user.username) {
       io.to(socket.id).emit('chat-failure', 'user not logged in!')
@@ -85,6 +87,16 @@ io.on('connection', (socket) => {
       userKeys.set(socket.id, importedKey)
     } else {
       console.log('failed to import key!')
+    }
+  })
+
+  socket.on('digsig-public-key', async (publicKey) => {
+    if (publicKey) {
+      const user = users.find((user) => user.id === socket.id)
+      user.digsigkey = publicKey
+      io.emit('connected-users', users)
+    } else {
+      console.log('failed to import digsig key')
     }
   })
 
